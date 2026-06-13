@@ -49,6 +49,40 @@ async function getVideoAspectRatio(filePath: string): Promise<string> {
   return "other";
 }
 
+async function processVideoForFastStart(inputFilePath: string): Promise<string> {
+  const outputFilePath = `${inputFilePath}.processed`;
+
+  const proc = Bun.spawn(
+    [
+      "ffmpeg",
+      "-i",
+      inputFilePath,
+      "-movflags",
+      "faststart",
+      "-map_metadata",
+      "0",
+      "-codec",
+      "copy",
+      "-f",
+      "mp4",
+      outputFilePath,
+    ],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+
+  const stderrText = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  if (exitCode !== 0) {
+    throw new Error(`ffmpeg failed: ${stderrText}`);
+  }
+
+  return outputFilePath;
+}
+
 export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   const { videoId } = req.params as { videoId?: string };
   if (!videoId) {
@@ -90,18 +124,24 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
 
   try {
     const aspectRatio = await getVideoAspectRatio(tempPath);
-    const key = `${aspectRatio}/${videoId}.mp4`;
-    const s3File = cfg.s3Client.file(key, {
-      bucket: cfg.s3Bucket,
-      type: "video/mp4",
-    });
-    await s3File.write(Bun.file(tempPath));
+    const processedPath = await processVideoForFastStart(tempPath);
 
-    const videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${key}`;
-    video.videoURL = videoURL;
-    updateVideo(cfg.db, video);
+    try {
+      const key = `${aspectRatio}/${videoId}.mp4`;
+      const s3File = cfg.s3Client.file(key, {
+        bucket: cfg.s3Bucket,
+        type: "video/mp4",
+      });
+      await s3File.write(Bun.file(processedPath));
 
-    return respondWithJSON(200, video);
+      const videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${key}`;
+      video.videoURL = videoURL;
+      updateVideo(cfg.db, video);
+
+      return respondWithJSON(200, video);
+    } finally {
+      await unlink(processedPath);
+    }
   } finally {
     await unlink(tempPath);
   }
