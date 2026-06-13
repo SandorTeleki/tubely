@@ -1,0 +1,16 @@
+{
+  "name": "complete",
+  "module": "/src/index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "^1.2.7",
+    "@types/jsonwebtoken": "^9.0.9"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.2"
+  }
+}
