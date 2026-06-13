@@ -7,6 +7,48 @@ import type { BunRequest } from "bun";
 import { unlink } from "fs/promises";
 import path from "path";
 
+async function getVideoAspectRatio(filePath: string): Promise<string> {
+  const proc = Bun.spawn(
+    [
+      "ffprobe",
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "stream=width,height",
+      "-of",
+      "json",
+      filePath,
+    ],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+
+  const stdoutText = await new Response(proc.stdout).text();
+  const stderrText = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  if (exitCode !== 0) {
+    throw new Error(`ffprobe failed: ${stderrText}`);
+  }
+
+  const parsed = JSON.parse(stdoutText);
+  const width = parsed.streams[0].width;
+  const height = parsed.streams[0].height;
+
+  const ratio = width / height;
+
+  if (Math.floor(ratio * 9) === 16) {
+    return "landscape";
+  } else if (Math.floor(ratio * 16) === 9) {
+    return "portrait";
+  }
+  return "other";
+}
+
 export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   const { videoId } = req.params as { videoId?: string };
   if (!videoId) {
@@ -47,7 +89,8 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   await Bun.write(tempPath, data);
 
   try {
-    const key = `${videoId}.mp4`;
+    const aspectRatio = await getVideoAspectRatio(tempPath);
+    const key = `${aspectRatio}/${videoId}.mp4`;
     const s3File = cfg.s3Client.file(key, {
       bucket: cfg.s3Bucket,
       type: "video/mp4",
