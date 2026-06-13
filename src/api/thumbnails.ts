@@ -1,9 +1,18 @@
+import path from "path";
 import { getBearerToken, validateJWT } from "../auth";
 import { respondWithJSON } from "./json";
 import { getVideo, updateVideo } from "../db/videos";
 import type { ApiConfig } from "../config";
 import type { BunRequest } from "bun";
 import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
+
+function getExtensionFromMimeType(mimeType: string): string {
+  const parts = mimeType.split("/");
+  if (parts.length !== 2) {
+    return "bin";
+  }
+  return parts[1];
+}
 
 export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   const { videoId } = req.params as { videoId?: string };
@@ -41,10 +50,14 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
     throw new UserForbiddenError("You don't own this video");
   }
 
-  const base64 = Buffer.from(data).toString("base64");
-  const dataURL = `data:${mediaType};base64,${base64}`;
+  const ext = getExtensionFromMimeType(mediaType);
+  const filename = `${videoId}.${ext}`;
+  const filePath = path.join(cfg.assetsRoot, filename);
 
-  video.thumbnailURL = dataURL;
+  await Bun.write(filePath, data);
+
+  const thumbnailURL = `http://localhost:${cfg.port}/assets/${filename}`;
+  video.thumbnailURL = thumbnailURL;
   updateVideo(cfg.db, video);
 
   return respondWithJSON(200, video);
