@@ -39,6 +39,10 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   }
 
   const mediaType = file.type;
+  if (mediaType !== "image/jpeg" && mediaType !== "image/png") {
+    throw new BadRequestError("Invalid file type. Only JPEG and PNG are allowed");
+  }
+
   const data = await file.arrayBuffer();
 
   const video = getVideo(cfg.db, videoId);
